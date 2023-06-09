@@ -1,4 +1,5 @@
 defmodule Momento.Config.Transport.TransportStrategy do
+  alias Momento.Config.Transport.TransportStrategy, as: TransportStrategy
   alias Momento.Config.Transport.GrpcConfiguration, as: GrpcConfiguration
 
   @moduledoc """

@@ -6,6 +6,6 @@ defmodule Momento.Config.Transport.GrpcConfiguration do
   defstruct [:deadline_millis]
 
   @opaque t() :: %__MODULE__{
-                   deadline_millis: number()
-                 }
+            deadline_millis: number()
+          }
 end
