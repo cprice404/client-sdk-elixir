@@ -37,7 +37,7 @@ defmodule Momento.Examples.Basic do
     response = Task.await(get_task)
 
     case response do
-      :hit -> IO.puts("'get' resulted in a 'hit' for key #{key}: #{inspect(response)}")
+      {:hit, value} -> IO.puts("'get' resulted in a 'hit' for key #{key}: #{inspect(response)}")
       :miss -> IO.puts("'get' resulted in a 'miss' for key #{key}.")
       {:error, error} -> IO.puts("Got an error for key #{key}: #{inspect(response)}")
     end
@@ -49,7 +49,8 @@ end
 IO.puts("Hello world")
 
 config = %Momento.Configuration{}
-cache_client = %Momento.CacheClient{config: config}
+credential_provider = Momento.Auth.CredentialProvider.from_env_var!("MOMENTO_AUTH_TOKEN")
+{:ok, cache_client} = Momento.CacheClient.create_client(config, credential_provider)
 
 set_tasks =
   1..20
