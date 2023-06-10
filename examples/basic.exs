@@ -50,7 +50,7 @@ IO.puts("Hello world")
 
 config = %Momento.Configuration{}
 credential_provider = Momento.Auth.CredentialProvider.from_env_var!("MOMENTO_AUTH_TOKEN")
-{:ok, cache_client} = Momento.CacheClient.create_client(config, credential_provider)
+cache_client = Momento.CacheClient.create_client!(config, credential_provider)
 
 set_tasks =
   1..20
