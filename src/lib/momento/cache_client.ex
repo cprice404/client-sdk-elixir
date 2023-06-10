@@ -2,32 +2,38 @@ defmodule Momento.CacheClient do
   @moduledoc """
   Documentation for `Momento.CacheClient`.
   """
-  @enforce_keys [:config, :credential_provider, :control_channel, :cache_channel]
-  defstruct [:config, :credential_provider, :control_channel, :cache_channel]
+  @enforce_keys [:config, :credential_provider,
+#    :control_channel, :cache_channel
+  ]
+  defstruct [:config, :credential_provider,
+#    :control_channel, :cache_channel
+  ]
 
   @opaque t() :: %__MODULE__{
             config: Momento.Configuration.t(),
             credential_provider: Momento.Auth.CredentialProvider.t(),
-            control_channel: GRPC.Channel.t(),
-            cache_channel: GRPC.Channel.t()
+#            control_channel: GRPC.Channel.t(),
+#            cache_channel: GRPC.Channel.t()
           }
 
-  @spec create_client(Momento.Configuration.t(), Momento.Auth.CredentialProvider.t()) ::
-          {:ok, Momento.CacheClient.t()} | {:error, String.t()}
-  def create_client(config, credential_provider) do
-    with {:ok, control_channel} <-
-           Momento.Internal.ScsControlClient.init_channel(config, credential_provider),
-         {:ok, cache_channel} <-
-           Momento.Internal.ScsDataClient.init_channel(config, credential_provider) do
-      {:ok,
+  @spec create_client!(config :: Momento.Configuration.t(),  credential_provider :: Momento.Auth.CredentialProvider.t()) ::
+      Momento.CacheClient.t()
+#        String.t()
+#          {:ok, Momento.CacheClient.t()} | {:error, String.t()}
+  def create_client!(config, credential_provider) do
+#    "foo"
+#    with {:ok, control_channel} <-
+#           Momento.Internal.ScsControlClient.init_channel(config, credential_provider),
+#         {:ok, cache_channel} <-
+#           Momento.Internal.ScsDataClient.init_channel(config, credential_provider) do
+#      {:ok,
        %Momento.CacheClient{
          config: config,
          credential_provider: credential_provider,
-         control_channel: control_channel,
-         cache_channel: cache_channel
+#         control_channel: control_channel,
+#         cache_channel: cache_channel
        }
-      }
-      end
+#    end
   end
 
   @doc """
