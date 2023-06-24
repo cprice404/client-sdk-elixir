@@ -214,12 +214,108 @@ defmodule Momento.Examples.LoadGen do
     log_stats(options, context)
   end
 
-  @spec run_worker(worker_id :: integer()) :: :void
-  defp run_worker(worker_id) do
-    Process.sleep(1000)
-    Logger.info("Worker #{worker_id} running!")
-    Process.sleep(20000)
-    Logger.info("Worker #{worker_id} done!")
+  @spec execute_request_and_update_context_counts(
+    context :: Context.t(),
+    request_fn :: fun()
+                          ) :: :void
+  defp execute_request_and_update_context_counts(context, request_fn) do
+    # TODO
+    request_fn.()
+  end
+
+
+  @spec worker_issue_write_and_read(
+          context :: Context.t(),
+          cache_client :: CacheClient.t(),
+          worker_id :: integer(),
+          operation_num :: integer(),
+          delay_between_requests_millis :: integer()
+        ) :: :void
+  defp worker_issue_write_and_read(
+         context,
+         cache_client,
+         worker_id,
+         operation_num,
+         delay_between_requests_millis
+       ) do
+    write_start_time = :os.system_time(:milli_seconds)
+
+    execute_request_and_update_context_counts(context, fn ->
+      execute_write(context, cache_client, worker_id, operation_num)
+    end)
+
+    write_duration = :os.system_time(:milli_seconds) - write_start_time
+    Histogram.record(context.write_latencies, write_duration)
+
+    if write_duration < delay_between_requests_millis do
+      Process.sleep(delay_between_requests_millis - write_duration)
+    end
+
+    read_start_time = :os.system_time(:milli_seconds)
+
+    execute_request_and_update_context_counts(context, fn ->
+      execute_read(context, cache_client, worker_id, operation_num)
+    end)
+
+    read_duration = :os.system_time(:milli_seconds) - read_start_time
+    Histogram.record(context.read_latencies, read_duration)
+
+    if read_duration < delay_between_requests_millis do
+      Process.sleep(delay_between_requests_millis - read_duration)
+    end
+  end
+
+  @spec worker_issue_requests_until(
+          context :: Context.t(),
+          cache_client :: CacheClient.t(),
+          worker_id :: integer(),
+          operation_num :: integer(),
+          stop_time_millis :: integer(),
+          delay_between_requests_millis :: integer()
+        ) :: :void
+  defp worker_issue_requests_until(
+         context,
+         cache_client,
+         worker_id,
+        operation_num,
+         stop_time_millis,
+         delay_between_requests_millis
+       ) do
+    worker_issue_write_and_read(context, cache_client, worker_id, operation_num, delay_between_requests_millis)
+    time = :os.system_time(:milli_seconds)
+
+    if time < stop_time_millis do
+      worker_issue_requests_until(
+        context,
+        cache_client,
+        worker_id,
+        operation_num + 1,
+        stop_time_millis,
+        delay_between_requests_millis
+      )
+    end
+  end
+
+  @spec execute_write(
+          context :: Context.t(),
+          cache_client :: CacheClient.t(),
+          worker_id :: integer(),
+          operation_num :: integer()
+        ) :: Responses.Set.t()
+  defp execute_write(context, cache_client, worker_id, operation_num) do
+    cache_key = "worker#{worker_id}operation#{operation_num}"
+    CacheClient.set(cache_client, @cache_name, cache_key, context.sample_value)
+  end
+
+  @spec execute_read(
+          context :: Context.t(),
+          cache_client :: CacheClient.t(),
+          worker_id :: integer(),
+          operation_num :: integer()
+        ) :: Responses.Set.t()
+  defp execute_read(context, cache_client, worker_id, operation_num) do
+    cache_key = "worker#{worker_id}operation#{operation_num}"
+    CacheClient.get(cache_client, @cache_name, cache_key)
   end
 
   @spec main(options :: Options.t()) :: :void
@@ -238,10 +334,23 @@ defmodule Momento.Examples.LoadGen do
     Logger.info("Running for #{options.total_seconds_to_run} seconds")
 
     context = Context.new()
+    stop_time_millis = context.start_time + options.total_seconds_to_run * 1000
+
+    delay_between_requests_millis =
+      round(1000.0 * options.number_of_concurrent_requests / options.max_requests_per_second)
 
     worker_tasks =
-      Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn i ->
-        Task.async(fn -> run_worker(i) end)
+      Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn worker_id ->
+        Task.async(fn ->
+          worker_issue_requests_until(
+            context,
+            cache_client,
+            worker_id,
+            1,
+            stop_time_millis,
+            delay_between_requests_millis
+          )
+        end)
       end)
 
     stats_logger_task = Task.async(fn -> log_stats(options, context) end)
@@ -251,18 +360,16 @@ defmodule Momento.Examples.LoadGen do
 
     Task.shutdown(stats_logger_task, :brutal_kill)
 
-#    Histogram.record(context.read_latencies, 42)
-#    Histogram.record(context.read_latencies, 500)
-#    Histogram.record(context.read_latencies, 11)
-#    Histogram.record(context.read_latencies, 66)
-#
-#    Logger.info("Read latencies summary:\n\n#{Histogram.summary(context.read_latencies)}\n\n")
+    #    Histogram.record(context.read_latencies, 42)
+    #    Histogram.record(context.read_latencies, 500)
+    #    Histogram.record(context.read_latencies, 11)
+    #    Histogram.record(context.read_latencies, 66)
+    #
+    #    Logger.info("Read latencies summary:\n\n#{Histogram.summary(context.read_latencies)}\n\n")
 
     Context.stop(context)
   end
 end
-
-# alias Momento.Examples.LoadGen
 
 defmodule Main do
   def main() do
@@ -272,7 +379,7 @@ defmodule Main do
       cache_item_payload_bytes: 100,
       max_requests_per_second: 100,
       number_of_concurrent_requests: 10,
-      total_seconds_to_run: 60
+      total_seconds_to_run: 20
     }
 
     Momento.Examples.LoadGen.main(options)
