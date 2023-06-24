@@ -22,7 +22,9 @@ defmodule Examples.MixProject do
   defp deps do
     [
       {:gomomento, path: "../src"},
-      {:tls_certificate_check, "~> 1.19"}
+      {:tls_certificate_check, "~> 1.19"},
+      # {:hdr_histogram, "~> 0.5.0"}
+      {:hdr_histogram, path: "../../hdr_histogram_erl"}
     ]
   end
 end
