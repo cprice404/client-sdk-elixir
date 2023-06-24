@@ -64,6 +64,7 @@ defmodule Momento.Examples.LoadGen do
     @spec summary(histogram :: t()) :: String.t()
     def summary(histogram) do
       h = Agent.get(histogram.agent, fn h -> h end)
+
       """
         count: #{:hdr_histogram.get_total_count(h)}
           min: #{:hdr_histogram.min(h)}
@@ -99,6 +100,11 @@ defmodule Momento.Examples.LoadGen do
     @spec increment(counter :: t()) :: integer()
     def increment(counter) do
       :atomics.add_get(counter.atomic, 1, 1)
+    end
+
+    @spec get(counter :: t()) :: integer()
+    def get(counter) do
+      :atomics.get(counter.atomic, 1)
     end
   end
 
@@ -162,11 +168,57 @@ defmodule Momento.Examples.LoadGen do
 
   @cache_name "elixir-loadgen"
 
+  @spec tps(context :: Context.t(), request_count :: integer()) :: integer()
+  defp tps(context, request_count) do
+    elapsed_time = :os.system_time(:milli_seconds) - context.start_time
+    request_count * 1000 / elapsed_time
+  end
+
+  @spec percent_requests(total_requests :: integer(), requests :: integer()) :: float()
+  defp percent_requests(total_requests, requests) do
+    if total_requests == 0 do
+      0
+    else
+      requests / total_requests
+    end
+  end
+
+  @spec log_stats(options :: Options.t(), context :: Context.t()) :: :void
+  defp log_stats(options, context) do
+    interval = options.show_stats_interval_seconds
+    Process.sleep(interval * 1000)
+    global_request_count = Counter.get(context.global_request_count)
+    global_success_count = Counter.get(context.global_success_count)
+    global_unavailable_count = Counter.get(context.global_unavailable_count)
+    global_deadline_exceeded_count = Counter.get(context.global_deadline_exceeded_count)
+    global_resource_exhausted_count = Counter.get(context.global_resource_exhausted_count)
+    global_rst_stream_count = Counter.get(context.global_rst_stream_count)
+
+    Logger.info("""
+    Cumulative stats:
+          total requests: #{global_request_count} (#{tps(context, global_request_count)} tps, limited to #{options.max_requests_per_second} tps)}
+                 success: #{global_success_count} (#{percent_requests(global_request_count, global_success_count)}%)
+             unavailable: #{global_unavailable_count} (#{percent_requests(global_request_count, global_unavailable_count)}%)
+       deadline exceeded: #{global_deadline_exceeded_count} (#{percent_requests(global_request_count, global_deadline_exceeded_count)}%)
+      resource exhausted: #{global_resource_exhausted_count} (#{percent_requests(global_request_count, global_resource_exhausted_count)}%)
+              rst stream: #{global_rst_stream_count} (#{percent_requests(global_request_count, global_rst_stream_count)}%)
+
+    Cumulative write latencies:
+    #{Histogram.summary(context.write_latencies)}
+
+    Cumulative read latencies:
+    #{Histogram.summary(context.read_latencies)}
+
+    """)
+
+    log_stats(options, context)
+  end
+
   @spec run_worker(worker_id :: integer()) :: :void
   defp run_worker(worker_id) do
     Process.sleep(1000)
     Logger.info("Worker #{worker_id} running!")
-    Process.sleep(5000)
+    Process.sleep(20000)
     Logger.info("Worker #{worker_id} done!")
   end
 
@@ -187,19 +239,24 @@ defmodule Momento.Examples.LoadGen do
 
     context = Context.new()
 
-    worker_tasks  = Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn i ->
-      Task.async(fn -> run_worker(i) end)
-    end)
+    worker_tasks =
+      Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn i ->
+        Task.async(fn -> run_worker(i) end)
+      end)
+
+    stats_logger_task = Task.async(fn -> log_stats(options, context) end)
 
     Logger.info("Awaiting worker tasks")
-    Task.await_many(worker_tasks, 10000)
+    Task.await_many(worker_tasks, :infinity)
 
-    Histogram.record(context.read_latencies, 42)
-    Histogram.record(context.read_latencies, 500)
-    Histogram.record(context.read_latencies, 11)
-    Histogram.record(context.read_latencies, 66)
+    Task.shutdown(stats_logger_task, :brutal_kill)
 
-    Logger.info("Read latencies summary:\n\n#{Histogram.summary(context.read_latencies)}\n\n")
+#    Histogram.record(context.read_latencies, 42)
+#    Histogram.record(context.read_latencies, 500)
+#    Histogram.record(context.read_latencies, 11)
+#    Histogram.record(context.read_latencies, 66)
+#
+#    Logger.info("Read latencies summary:\n\n#{Histogram.summary(context.read_latencies)}\n\n")
 
     Context.stop(context)
   end
