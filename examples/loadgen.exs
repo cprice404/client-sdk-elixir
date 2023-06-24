@@ -73,26 +73,6 @@ defmodule Momento.Examples.LoadGen do
         p99.9: #{:hdr_histogram.percentile(h, 99.9)}
           max: #{:hdr_histogram.max(h)}
       """
-      #
-#    count: ${histogram.totalCount}
-#min: ${histogram.minNonZeroValue}
-#p50: ${histogram.getValueAtPercentile(50)}
-#  p90: ${histogram.getValueAtPercentile(90)}
-# p99: ${histogram.getValueAtPercentile(99)}
-# p99.9: ${histogram.getValueAtPercentile(99.9)}
-# max: ${histogram.maxValue}
-
-
-      #
-#      io:format("Min ~p~n", [hdr_histogram:min(R)]),
-#      io:format("Mean ~.3f~n", [hdr_histogram:mean(R)]),
-#      io:format("Median ~.3f~n", [hdr_histogram:median(R)]),
-#      io:format("Max ~p~n", [hdr_histogram:max(R)]),
-#      io:format("Stddev ~.3f~n", [hdr_histogram:stddev(R)]),
-#      io:format("99ile ~.3f~n", [hdr_histogram:percentile(R,99.0)]),
-#      io:format("99.9999ile ~.3f~n", [hdr_histogram:percentile(R,99.9999)]),
-#      io:format("Memory Size ~p~n", [hdr_histogram:get_memory_size(R)]),
-#      io:format("Total Count ~p~n", [hdr_histogram:get_total_count(R)]),
     end
 
     @spec stop(histogram :: t()) :: :void
@@ -182,6 +162,14 @@ defmodule Momento.Examples.LoadGen do
 
   @cache_name "elixir-loadgen"
 
+  @spec run_worker(worker_id :: integer()) :: :void
+  defp run_worker(worker_id) do
+    Process.sleep(1000)
+    Logger.info("Worker #{worker_id} running!")
+    Process.sleep(5000)
+    Logger.info("Worker #{worker_id} done!")
+  end
+
   @spec main(options :: Options.t()) :: :void
   def main(options) do
     cache_client =
@@ -199,10 +187,16 @@ defmodule Momento.Examples.LoadGen do
 
     context = Context.new()
 
+    worker_tasks  = Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn i ->
+      Task.async(fn -> run_worker(i) end)
+    end)
+
+    Logger.info("Awaiting worker tasks")
+    Task.await_many(worker_tasks, 10000)
+
     Histogram.record(context.read_latencies, 42)
     Histogram.record(context.read_latencies, 500)
     Histogram.record(context.read_latencies, 11)
-#    Histogram.record(context.read_latencies, 90210)
     Histogram.record(context.read_latencies, 66)
 
     Logger.info("Read latencies summary:\n\n#{Histogram.summary(context.read_latencies)}\n\n")
