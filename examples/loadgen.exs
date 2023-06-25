@@ -365,8 +365,8 @@ defmodule Momento.Examples.LoadGen do
     stop_time_millis = context.start_time + options.total_seconds_to_run * 1000
     cache_value = String.duplicate("x", options.cache_item_payload_bytes)
 
-    # reduce to 90% to give us a little more buffer to try to make sure we stay under the target tps
-    adjusted_max_rps = options.max_requests_per_second * 0.9
+#    # reduce just a touch to give us a little more buffer, to make sure we stay under the target tps
+    adjusted_max_rps = options.max_requests_per_second * 0.99
     delay_between_requests_millis =
       ceil((1000.0 * options.number_of_concurrent_requests) / adjusted_max_rps)
 
@@ -405,9 +405,9 @@ defmodule Main do
       show_stats_interval_seconds: 5,
       request_timeout_ms: 15 * 1000,
       cache_item_payload_bytes: 100,
-      max_requests_per_second: 100,
-      number_of_concurrent_requests: 10,
-      total_seconds_to_run: 60
+      max_requests_per_second: 2_000,
+      number_of_concurrent_requests: 100,
+      total_seconds_to_run: 300
     }
 
     Momento.Examples.LoadGen.main(options)
