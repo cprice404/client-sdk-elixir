@@ -116,9 +116,8 @@ defmodule Momento.Examples.LoadGen do
       :global_request_count,
       :global_success_count,
       :global_unavailable_count,
-      :global_deadline_exceeded_count,
-      :global_resource_exhausted_count,
-      :global_rst_stream_count
+      :global_timeout_count,
+      :global_limit_exceeded_count
     ]
     defstruct [
       :start_time,
@@ -127,9 +126,8 @@ defmodule Momento.Examples.LoadGen do
       :global_request_count,
       :global_success_count,
       :global_unavailable_count,
-      :global_deadline_exceeded_count,
-      :global_resource_exhausted_count,
-      :global_rst_stream_count
+      :global_timeout_count,
+      :global_limit_exceeded_count
     ]
 
     @type t() :: %__MODULE__{
@@ -139,9 +137,8 @@ defmodule Momento.Examples.LoadGen do
             global_request_count: Counter.t(),
             global_success_count: Counter.t(),
             global_unavailable_count: Counter.t(),
-            global_deadline_exceeded_count: Counter.t(),
-            global_resource_exhausted_count: Counter.t(),
-            global_rst_stream_count: Counter.t()
+            global_timeout_count: Counter.t(),
+            global_limit_exceeded_count: Counter.t()
           }
 
     @spec new() :: Context.t()
@@ -153,9 +150,8 @@ defmodule Momento.Examples.LoadGen do
         global_request_count: Counter.new(),
         global_success_count: Counter.new(),
         global_unavailable_count: Counter.new(),
-        global_deadline_exceeded_count: Counter.new(),
-        global_resource_exhausted_count: Counter.new(),
-        global_rst_stream_count: Counter.new()
+        global_timeout_count: Counter.new(),
+        global_limit_exceeded_count: Counter.new()
       }
     end
 
@@ -171,7 +167,7 @@ defmodule Momento.Examples.LoadGen do
   @spec tps(context :: Context.t(), request_count :: integer()) :: integer()
   defp tps(context, request_count) do
     elapsed_time = :os.system_time(:milli_seconds) - context.start_time
-    request_count * 1000 / elapsed_time
+    round(request_count * 1000 / elapsed_time)
   end
 
   @spec percent_requests(total_requests :: integer(), requests :: integer()) :: float()
@@ -179,29 +175,25 @@ defmodule Momento.Examples.LoadGen do
     if total_requests == 0 do
       0
     else
-      requests / total_requests
+      Float.round((requests / total_requests) * 100, 2)
     end
   end
 
   @spec log_stats(options :: Options.t(), context :: Context.t()) :: :void
   defp log_stats(options, context) do
-    interval = options.show_stats_interval_seconds
-    Process.sleep(interval * 1000)
     global_request_count = Counter.get(context.global_request_count)
     global_success_count = Counter.get(context.global_success_count)
     global_unavailable_count = Counter.get(context.global_unavailable_count)
-    global_deadline_exceeded_count = Counter.get(context.global_deadline_exceeded_count)
-    global_resource_exhausted_count = Counter.get(context.global_resource_exhausted_count)
-    global_rst_stream_count = Counter.get(context.global_rst_stream_count)
+    global_timeout_count = Counter.get(context.global_timeout_count)
+    global_limit_exceeded_count = Counter.get(context.global_limit_exceeded_count)
 
     Logger.info("""
     Cumulative stats:
           total requests: #{global_request_count} (#{tps(context, global_request_count)} tps, limited to #{options.max_requests_per_second} tps)}
                  success: #{global_success_count} (#{percent_requests(global_request_count, global_success_count)}%)
-             unavailable: #{global_unavailable_count} (#{percent_requests(global_request_count, global_unavailable_count)}%)
-       deadline exceeded: #{global_deadline_exceeded_count} (#{percent_requests(global_request_count, global_deadline_exceeded_count)}%)
-      resource exhausted: #{global_resource_exhausted_count} (#{percent_requests(global_request_count, global_resource_exhausted_count)}%)
-              rst stream: #{global_rst_stream_count} (#{percent_requests(global_request_count, global_rst_stream_count)}%)
+      server unavailable: #{global_unavailable_count} (#{percent_requests(global_request_count, global_unavailable_count)}%)
+                 timeout: #{global_timeout_count} (#{percent_requests(global_request_count, global_timeout_count)}%)
+          limit exceeded: #{global_limit_exceeded_count} (#{percent_requests(global_request_count, global_limit_exceeded_count)}%)
 
     Cumulative write latencies:
     #{Histogram.summary(context.write_latencies)}
@@ -210,38 +202,62 @@ defmodule Momento.Examples.LoadGen do
     #{Histogram.summary(context.read_latencies)}
 
     """)
+  end
 
+  @spec continuously_log_stats(options :: Options.t(), context :: Context.t()) :: :void
+  defp continuously_log_stats(options, context) do
+    interval = options.show_stats_interval_seconds
+    Process.sleep(interval * 1000)
     log_stats(options, context)
+    continuously_log_stats(options, context)
   end
 
   @spec execute_request_and_update_context_counts(
-    context :: Context.t(),
-    request_fn :: fun()
-                          ) :: :void
+          context :: Context.t(),
+          request_fn :: fun()
+        ) :: :void
   defp execute_request_and_update_context_counts(context, request_fn) do
-    # TODO
-    request_fn.()
-  end
+    response = request_fn.()
+    Counter.increment(context.global_request_count)
 
+    case response do
+      {:ok, _} ->
+        Counter.increment(context.global_success_count)
+      :miss ->
+        Logger.warn("Cache miss!")
+        Counter.increment(context.global_success_count)
+      {:error, err} ->
+        Logger.warn("Error: #{err}")
+        case err.error_code do
+          :server_unavailable -> Counter.increment(context.global_unavailable_count)
+          :timeout_error -> Counter.increment(context.global_timeout_count)
+          :limit_exceeded_error -> Counter.increment(context.global_limit_exceeded_count)
+          _ -> raise RuntimeError, "Unsupported error: #{err}"
+        end
+      _ -> raise RuntimeError, "Unexpected response: #{response}"
+    end
+  end
 
   @spec worker_issue_write_and_read(
           context :: Context.t(),
           cache_client :: CacheClient.t(),
           worker_id :: integer(),
           operation_num :: integer(),
-          delay_between_requests_millis :: integer()
+          delay_between_requests_millis :: integer(),
+          cache_value :: binary()
         ) :: :void
   defp worker_issue_write_and_read(
          context,
          cache_client,
          worker_id,
          operation_num,
-         delay_between_requests_millis
+         delay_between_requests_millis,
+         cache_value
        ) do
     write_start_time = :os.system_time(:milli_seconds)
 
     execute_request_and_update_context_counts(context, fn ->
-      execute_write(context, cache_client, worker_id, operation_num)
+      execute_write(context, cache_client, worker_id, operation_num, cache_value)
     end)
 
     write_duration = :os.system_time(:milli_seconds) - write_start_time
@@ -271,17 +287,27 @@ defmodule Momento.Examples.LoadGen do
           worker_id :: integer(),
           operation_num :: integer(),
           stop_time_millis :: integer(),
-          delay_between_requests_millis :: integer()
+          delay_between_requests_millis :: integer(),
+          cache_value :: binary()
         ) :: :void
   defp worker_issue_requests_until(
          context,
          cache_client,
          worker_id,
-        operation_num,
+         operation_num,
          stop_time_millis,
-         delay_between_requests_millis
+         delay_between_requests_millis,
+         cache_value
        ) do
-    worker_issue_write_and_read(context, cache_client, worker_id, operation_num, delay_between_requests_millis)
+    worker_issue_write_and_read(
+      context,
+      cache_client,
+      worker_id,
+      operation_num,
+      delay_between_requests_millis,
+      cache_value
+    )
+
     time = :os.system_time(:milli_seconds)
 
     if time < stop_time_millis do
@@ -291,7 +317,8 @@ defmodule Momento.Examples.LoadGen do
         worker_id,
         operation_num + 1,
         stop_time_millis,
-        delay_between_requests_millis
+        delay_between_requests_millis,
+        cache_value
       )
     end
   end
@@ -300,11 +327,12 @@ defmodule Momento.Examples.LoadGen do
           context :: Context.t(),
           cache_client :: CacheClient.t(),
           worker_id :: integer(),
-          operation_num :: integer()
+          operation_num :: integer(),
+          cache_value :: binary()
         ) :: Responses.Set.t()
-  defp execute_write(context, cache_client, worker_id, operation_num) do
+  defp execute_write(context, cache_client, worker_id, operation_num, cache_value) do
     cache_key = "worker#{worker_id}operation#{operation_num}"
-    CacheClient.set(cache_client, @cache_name, cache_key, context.sample_value)
+    CacheClient.set(cache_client, @cache_name, cache_key, cache_value)
   end
 
   @spec execute_read(
@@ -312,7 +340,7 @@ defmodule Momento.Examples.LoadGen do
           cache_client :: CacheClient.t(),
           worker_id :: integer(),
           operation_num :: integer()
-        ) :: Responses.Set.t()
+        ) :: Responses.Get.t()
   defp execute_read(context, cache_client, worker_id, operation_num) do
     cache_key = "worker#{worker_id}operation#{operation_num}"
     CacheClient.get(cache_client, @cache_name, cache_key)
@@ -335,9 +363,12 @@ defmodule Momento.Examples.LoadGen do
 
     context = Context.new()
     stop_time_millis = context.start_time + options.total_seconds_to_run * 1000
+    cache_value = String.duplicate("x", options.cache_item_payload_bytes)
 
+    # reduce to 90% to give us a little more buffer to try to make sure we stay under the target tps
+    adjusted_max_rps = options.max_requests_per_second * 0.9
     delay_between_requests_millis =
-      round(1000.0 * options.number_of_concurrent_requests / options.max_requests_per_second)
+      ceil((1000.0 * options.number_of_concurrent_requests) / adjusted_max_rps)
 
     worker_tasks =
       Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn worker_id ->
@@ -348,24 +379,21 @@ defmodule Momento.Examples.LoadGen do
             worker_id,
             1,
             stop_time_millis,
-            delay_between_requests_millis
+            delay_between_requests_millis,
+            cache_value
           )
         end)
       end)
 
-    stats_logger_task = Task.async(fn -> log_stats(options, context) end)
+    stats_logger_task = Task.async(fn -> continuously_log_stats(options, context) end)
 
     Logger.info("Awaiting worker tasks")
     Task.await_many(worker_tasks, :infinity)
 
     Task.shutdown(stats_logger_task, :brutal_kill)
 
-    #    Histogram.record(context.read_latencies, 42)
-    #    Histogram.record(context.read_latencies, 500)
-    #    Histogram.record(context.read_latencies, 11)
-    #    Histogram.record(context.read_latencies, 66)
-    #
-    #    Logger.info("Read latencies summary:\n\n#{Histogram.summary(context.read_latencies)}\n\n")
+    Logger.info("Final results:")
+    log_stats(options, context)
 
     Context.stop(context)
   end
@@ -379,7 +407,7 @@ defmodule Main do
       cache_item_payload_bytes: 100,
       max_requests_per_second: 100,
       number_of_concurrent_requests: 10,
-      total_seconds_to_run: 20
+      total_seconds_to_run: 60
     }
 
     Momento.Examples.LoadGen.main(options)

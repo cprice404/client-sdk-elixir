@@ -8,6 +8,19 @@ defmodule Momento.Error do
           message: String.t()
         }
 
+  defimpl String.Chars, for: Momento.Error do
+       def to_string(error) do
+         inspect(error)
+         end
+     end
+
+#  defimpl Inspect, for: Momento.Error do
+#    def inspect(%Momento.Error{} = error, _opts) do
+##      "#Momento.Internal.ScsDataClient<auth_token: [hidden], channel: #{inspect(data_client.channel)}>"
+#      "FOOOOOOOOOO"
+#    end
+#  end
+
   @spec convert(error :: Exception.t()) :: Momento.Error.t()
   def convert(%Momento.Error{} = error), do: error
   def convert(%GRPC.RPCError{} = error), do: convert_grpc_error(error)

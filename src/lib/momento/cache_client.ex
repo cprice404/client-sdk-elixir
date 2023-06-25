@@ -51,7 +51,7 @@ defmodule Momento.CacheClient do
   @spec create!(
           config :: Configuration.t(),
           credential_provider :: CredentialProvider.t(),
-          default_ttl_seconds :: float()
+          default_ttl_seconds :: number()
         ) :: t()
   def create!(config, credential_provider, default_ttl_seconds) do
     with control_client <- ScsControlClient.create!(credential_provider),
