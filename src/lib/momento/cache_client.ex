@@ -48,12 +48,18 @@ defmodule Momento.CacheClient do
 
   - A `%Momento.CacheClient{}` struct representing the connected client.
   """
-  @spec create!(
-          config :: Configuration.t(),
-          credential_provider :: CredentialProvider.t(),
-          default_ttl_seconds :: number()
+  @spec create!(opts :: [config: Configuration.t(),
+                             credential_provider: CredentialProvider.t(),
+                             default_ttl_seconds: number()
+                  ]
+
+                  # opts :: [start_rank: integer(), end_rank: integer(), sort_order: :asc | :desc]
+
         ) :: t()
-  def create!(config, credential_provider, default_ttl_seconds) do
+  def create!(opts) do
+    config = Keyword.get(opts, :config)
+    credential_provider = Keyword.get(opts, :credential_provider)
+    default_ttl_seconds = Keyword.get(opts, :default_ttl_seconds)
     with control_client <- ScsControlClient.create!(credential_provider),
          data_client <- ScsDataClient.create!(credential_provider) do
       %__MODULE__{
@@ -147,7 +153,7 @@ defmodule Momento.CacheClient do
           cache_name :: String.t(),
           key :: binary(),
           value :: binary(),
-          opts :: [ttl_seconds :: float()]
+          opts :: [ttl_seconds :: number()]
         ) :: Set.t()
   def set(client, cache_name, key, value, opts \\ []) do
     ttl = Keyword.get(opts, :ttl_seconds, client.default_ttl_seconds)
@@ -169,7 +175,7 @@ defmodule Momento.CacheClient do
   - `:miss` if the key does not exist.
   - `{:error, error}` tuple if an error occurs.
   """
-  @spec get(client :: t(), cache_name :: String.t(), key :: binary) :: Get.t()
+  @spec get(client :: t(), cache_name :: String.t(), key :: binary()) :: Get.t()
   def get(client, cache_name, key) do
     ScsDataClient.get(client.data_client, cache_name, key)
   end
@@ -188,7 +194,7 @@ defmodule Momento.CacheClient do
   - `{:ok, %Momento.Responses.Delete.Ok{}}` on a successful deletion.
   - `{:error, error}` tuple if an error occurs.
   """
-  @spec delete(client :: t(), cache_name :: String.t(), key :: binary) :: Delete.t()
+  @spec delete(client :: t(), cache_name :: String.t(), key :: binary()) :: Delete.t()
   def delete(client, cache_name, key) do
     ScsDataClient.delete(client.data_client, cache_name, key)
   end

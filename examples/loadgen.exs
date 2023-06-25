@@ -175,7 +175,7 @@ defmodule Momento.Examples.LoadGen do
     if total_requests == 0 do
       0
     else
-      Float.round((requests / total_requests) * 100, 2)
+      Float.round(requests / total_requests * 100, 2)
     end
   end
 
@@ -223,18 +223,23 @@ defmodule Momento.Examples.LoadGen do
     case response do
       {:ok, _} ->
         Counter.increment(context.global_success_count)
+
       :miss ->
         Logger.warn("Cache miss!")
         Counter.increment(context.global_success_count)
+
       {:error, err} ->
         Logger.warn("Error: #{err}")
+
         case err.error_code do
           :server_unavailable -> Counter.increment(context.global_unavailable_count)
           :timeout_error -> Counter.increment(context.global_timeout_count)
           :limit_exceeded_error -> Counter.increment(context.global_limit_exceeded_count)
           _ -> raise RuntimeError, "Unsupported error: #{err}"
         end
-      _ -> raise RuntimeError, "Unexpected response: #{response}"
+
+      _ ->
+        raise RuntimeError, "Unexpected response: #{response}"
     end
   end
 
@@ -350,9 +355,9 @@ defmodule Momento.Examples.LoadGen do
   def main(options) do
     cache_client =
       CacheClient.create!(
-        Configurations.Laptop.latest(),
-        CredentialProvider.from_env_var!("MOMENTO_AUTH_TOKEN"),
-        60
+        config: Configurations.Laptop.latest(),
+        credential_provider: CredentialProvider.from_env_var!("MOMENTO_AUTH_TOKEN"),
+        default_ttl_seconds: 60
       )
 
     CacheClient.create_cache(cache_client, @cache_name)
@@ -365,10 +370,11 @@ defmodule Momento.Examples.LoadGen do
     stop_time_millis = context.start_time + options.total_seconds_to_run * 1000
     cache_value = String.duplicate("x", options.cache_item_payload_bytes)
 
-#    # reduce just a touch to give us a little more buffer, to make sure we stay under the target tps
+    # reduce just a bit to give us a little more buffer, to make sure we stay under the target tps
     adjusted_max_rps = options.max_requests_per_second * 0.99
+
     delay_between_requests_millis =
-      ceil((1000.0 * options.number_of_concurrent_requests) / adjusted_max_rps)
+      ceil(1000.0 * options.number_of_concurrent_requests / adjusted_max_rps)
 
     worker_tasks =
       Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn worker_id ->
@@ -405,7 +411,7 @@ defmodule Main do
       show_stats_interval_seconds: 5,
       request_timeout_ms: 15 * 1000,
       cache_item_payload_bytes: 100,
-      max_requests_per_second: 2_000,
+      max_requests_per_second: 100,
       number_of_concurrent_requests: 100,
       total_seconds_to_run: 300
     }
