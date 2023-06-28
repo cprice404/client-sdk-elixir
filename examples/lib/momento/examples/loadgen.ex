@@ -1,9 +1,9 @@
 require Logger
 
 defmodule Momento.Examples.LoadGen do
-  alias Momento.CacheClient
-  alias Momento.Configurations
-  alias Momento.Auth.CredentialProvider
+#  alias Momento.CacheClient
+#  alias Momento.Configurations
+#  alias Momento.Auth.CredentialProvider
   alias Momento.Examples.Histogram
   alias Momento.Examples.Counter
   alias Momento.Responses
@@ -284,14 +284,14 @@ defmodule Momento.Examples.LoadGen do
 
   @spec main(options :: Options.t()) :: :void
   def main(options) do
-    cache_client =
-      CacheClient.create!(
-        Configurations.Laptop.latest(),
-        CredentialProvider.from_env_var!("MOMENTO_AUTH_TOKEN"),
-        60
-      )
-
-    CacheClient.create_cache(cache_client, @cache_name)
+#    cache_client =
+#      CacheClient.create!(
+#        Configurations.Laptop.latest(),
+#        CredentialProvider.from_env_var!("MOMENTO_AUTH_TOKEN"),
+#        60
+#      )
+#
+#    CacheClient.create_cache(cache_client, @cache_name)
 
     Logger.info("Limiting to #{options.max_requests_per_second} tps")
     Logger.info("Running #{options.number_of_concurrent_requests} concurrent requests")
