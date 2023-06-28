@@ -147,26 +147,26 @@ defmodule Momento.Examples.LoadGen do
         ) :: :void
   defp execute_request_and_update_context_counts(context, request_fn) do
     response = request_fn.()
-    Counter.increment(context.global_request_count)
-
-    case response do
-      {:ok, _} ->
-        Counter.increment(context.global_success_count)
-
-      :miss ->
-        Logger.warn("Cache miss!")
-        Counter.increment(context.global_success_count)
-
-      {:error, err} ->
-        Logger.warn("Error: #{err}")
-
-        case err.error_code do
-          :server_unavailable -> Counter.increment(context.global_unavailable_count)
-          :timeout_error -> Counter.increment(context.global_timeout_count)
-          :limit_exceeded_error -> Counter.increment(context.global_limit_exceeded_count)
-          _ -> raise RuntimeError, "Unsupported error: #{err}"
-        end
-    end
+#    Counter.increment(context.global_request_count)
+#
+#    case response do
+#      {:ok, _} ->
+#        Counter.increment(context.global_success_count)
+#
+#      :miss ->
+#        Logger.warn("Cache miss!")
+#        Counter.increment(context.global_success_count)
+#
+#      {:error, err} ->
+#        Logger.warn("Error: #{err}")
+#
+#        case err.error_code do
+#          :server_unavailable -> Counter.increment(context.global_unavailable_count)
+#          :timeout_error -> Counter.increment(context.global_timeout_count)
+#          :limit_exceeded_error -> Counter.increment(context.global_limit_exceeded_count)
+#          _ -> raise RuntimeError, "Unsupported error: #{err}"
+#        end
+#    end
     :void
   end
 
@@ -186,31 +186,39 @@ defmodule Momento.Examples.LoadGen do
          delay_between_requests_millis,
          cache_value
        ) do
+
     write_start_time = :os.system_time(:milli_seconds)
+    Logger.info("Starting write at #{write_start_time}")
 
-    execute_request_and_update_context_counts(context, fn ->
+#    execute_request_and_update_context_counts(context, fn ->
       execute_write(context, cache_client, worker_id, operation_num, cache_value)
-    end)
-
+#    end)
+#
     write_duration = :os.system_time(:milli_seconds) - write_start_time
+    Logger.info("Finished write; duration: #{write_duration}")
+
     Histogram.record(context.write_latencies, write_duration)
 
-    if write_duration < delay_between_requests_millis do
-      Process.sleep(delay_between_requests_millis - write_duration)
-    end
+#    if write_duration < delay_between_requests_millis do
+#      Process.sleep(delay_between_requests_millis - write_duration)
+#    end
 
     read_start_time = :os.system_time(:milli_seconds)
+    Logger.info("Starting read at #{read_start_time}")
 
-    execute_request_and_update_context_counts(context, fn ->
+
+#    execute_request_and_update_context_counts(context, fn ->
       execute_read(context, cache_client, worker_id, operation_num)
-    end)
+#    end)
 
     read_duration = :os.system_time(:milli_seconds) - read_start_time
+    Logger.info("Finished read; duration: #{read_duration}")
+
     Histogram.record(context.read_latencies, read_duration)
 
-    if read_duration < delay_between_requests_millis do
-      Process.sleep(delay_between_requests_millis - read_duration)
-    end
+#    if read_duration < delay_between_requests_millis do
+#      Process.sleep(delay_between_requests_millis - read_duration)
+#    end
 
     :void
   end
@@ -307,9 +315,10 @@ defmodule Momento.Examples.LoadGen do
     delay_between_requests_millis =
       ceil(1000.0 * options.number_of_concurrent_requests / adjusted_max_rps)
 
-    worker_tasks =
-      Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn worker_id ->
-        Task.async(fn ->
+#    worker_tasks =
+#      Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn worker_id ->
+worker_id = 1
+#        Task.async(fn ->
           worker_issue_requests_until(
             context,
             cache_client,
@@ -319,13 +328,13 @@ defmodule Momento.Examples.LoadGen do
             delay_between_requests_millis,
             cache_value
           )
-        end)
-      end)
+#        end)
+#      end)
 
     stats_logger_task = Task.async(fn -> continuously_log_stats(options, context) end)
 
     Logger.info("Awaiting worker tasks")
-    Task.await_many(worker_tasks, :infinity)
+#    Task.await_many(worker_tasks, :infinity)
 
     Task.shutdown(stats_logger_task, :brutal_kill)
 

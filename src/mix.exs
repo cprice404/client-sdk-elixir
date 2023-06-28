@@ -30,7 +30,7 @@ defmodule Momento.MixProject do
     [
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:dialyxir, "~> 1.3", only: [:dev], runtime: false},
-      {:grpc, "~> 0.5.0"},
+      {:grpc, "~> 0.6.0"},
       {:protobuf, "~> 0.12.0"},
       {:google_protos, "~> 0.3"},
       {:joken, "~> 2.5"},
