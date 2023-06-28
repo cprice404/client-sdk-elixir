@@ -4,9 +4,11 @@ defmodule Momento.Examples.LoadGen do
 #  alias Momento.CacheClient
 #  alias Momento.Configurations
 #  alias Momento.Auth.CredentialProvider
+  alias Redix
   alias Momento.Examples.Histogram
   alias Momento.Examples.Counter
   alias Momento.Responses
+
 
   defmodule Options do
     @enforce_keys [
@@ -147,6 +149,7 @@ defmodule Momento.Examples.LoadGen do
         ) :: :void
   defp execute_request_and_update_context_counts(context, request_fn) do
     response = request_fn.()
+#    Logger.info("RESPONSE: #{inspect(response)}")
     Counter.increment(context.global_request_count)
 
     case response do
@@ -158,14 +161,15 @@ defmodule Momento.Examples.LoadGen do
         Counter.increment(context.global_success_count)
 
       {:error, err} ->
-        Logger.warn("Error: #{err}")
+        Logger.warn("Error: #{inspect(err)}")
 
-        case err.error_code do
-          :server_unavailable -> Counter.increment(context.global_unavailable_count)
-          :timeout_error -> Counter.increment(context.global_timeout_count)
-          :limit_exceeded_error -> Counter.increment(context.global_limit_exceeded_count)
-          _ -> raise RuntimeError, "Unsupported error: #{err}"
-        end
+#        case err.error_code do
+#          :server_unavailable -> Counter.increment(context.global_unavailable_count)
+#          :timeout_error -> Counter.increment(context.global_timeout_count)
+#          :limit_exceeded_error -> Counter.increment(context.global_limit_exceeded_count)
+#          _ -> raise RuntimeError, "Unsupported error: #{inspect(err)}"
+#        end
+        raise RuntimeError, "Unsupported error: #{inspect(err)}"
     end
     :void
   end
@@ -261,14 +265,16 @@ defmodule Momento.Examples.LoadGen do
 
   @spec execute_write(
           context :: Context.t(),
-          cache_client :: CacheClient.t(),
+#          cache_client :: CacheClient.t(),
+          cache_client :: any(),
           worker_id :: integer(),
           operation_num :: integer(),
           cache_value :: binary()
         ) :: Responses.Set.t()
   defp execute_write(_context, cache_client, worker_id, operation_num, cache_value) do
     cache_key = "worker#{worker_id}operation#{operation_num}"
-    CacheClient.set(cache_client, @cache_name, cache_key, cache_value)
+#    CacheClient.set(cache_client, @cache_name, cache_key, cache_value)
+    Redix.command(cache_client, ["SET", cache_key, cache_value])
   end
 
   @spec execute_read(
@@ -279,7 +285,8 @@ defmodule Momento.Examples.LoadGen do
         ) :: Responses.Get.t()
   defp execute_read(_context, cache_client, worker_id, operation_num) do
     cache_key = "worker#{worker_id}operation#{operation_num}"
-    CacheClient.get(cache_client, @cache_name, cache_key)
+#    CacheClient.get(cache_client, @cache_name, cache_key)
+    Redix.command(cache_client, ["GET", cache_key])
   end
 
   @spec main(options :: Options.t()) :: :void
@@ -292,6 +299,9 @@ defmodule Momento.Examples.LoadGen do
 #      )
 #
 #    CacheClient.create_cache(cache_client, @cache_name)
+#    {:ok, cache_client} = Redix.start_link("redis://localhost", name: :redix)
+    {:ok, cache_client} = Redix.start_link("redis://deleteme-elixir-test.afgf95.ng.0001.usw2.cache.amazonaws.com:6379", name: :redix)
+
 
     Logger.info("Limiting to #{options.max_requests_per_second} tps")
     Logger.info("Running #{options.number_of_concurrent_requests} concurrent requests")
@@ -309,6 +319,7 @@ defmodule Momento.Examples.LoadGen do
 
     worker_tasks =
       Enum.map(Enum.to_list(1..(options.number_of_concurrent_requests + 1)), fn worker_id ->
+        Process.sleep(:rand.uniform(100))
         Task.async(fn ->
           worker_issue_requests_until(
             context,

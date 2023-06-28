@@ -26,6 +26,7 @@ defmodule Examples.MixProject do
     [
       {:dialyxir, "~> 1.3", only: [:dev], runtime: false},
       {:gomomento, "0.5.0"},
+      {:redix, "1.2.3"},
       {:tls_certificate_check, "~> 1.19"},
       {:hdr_histogram, path: "../vendor/hdr_histogram_erl"}
     ]
