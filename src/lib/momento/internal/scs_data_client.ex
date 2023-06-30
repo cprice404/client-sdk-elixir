@@ -25,7 +25,8 @@ defmodule Momento.Internal.ScsDataClient do
 
     with {:ok, channel} <-
            GRPC.Stub.connect(cache_endpoint <> ":443",
-             cred: GRPC.Credential.new(ssl: tls_options)
+             cred: GRPC.Credential.new(ssl: tls_options),
+#           adapter: GRPC.Client.Adapters.Mint
            ) do
       {:ok,
        %__MODULE__{
