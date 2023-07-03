@@ -28,7 +28,8 @@ defmodule StandalonePingRepro.MixProject do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
       {:grpc, "0.6.0"},
       {:protobuf, "~> 0.12.0"},
-      {:tls_certificate_check, "~> 1.19"}
+      #{:tls_certificate_check, "~> 1.19"}
+      {:certifi, "~> 2.11"}
     ]
   end
 end
