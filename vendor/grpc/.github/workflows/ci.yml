@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - "**"
+  push:
+    branches:
+      - master
+
+jobs:
+  check_format:
+    runs-on: ubuntu-20.04
+    name: Check format
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: 25.1.x
+          elixir-version: 1.14.x
+      - name: Retrieve dependencies cache
+        uses: actions/cache@v3
+        id: mix-cache # id to use in retrieve action
+        with:
+          path: deps
+          key: v1-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+      - name: Install Dependencies
+        run: mix deps.get 1>/dev/null
+      - name: Check format
+        run: mix format --check-formatted
+  tests:
+    runs-on: ubuntu-20.04
+    name: OTP ${{matrix.otp}} / Elixir ${{matrix.elixir}}
+    strategy:
+      matrix:
+        otp: [22.x, 23.x, 24.x, 25.1.x]
+        elixir: [1.11.x, 1.12.x, 1.13.x, 1.14.x]
+        exclude:
+          - otp: 25.1.x
+            elixir: 1.11.x
+          - otp: 25.1.x
+            elixir: 1.12.x
+          - otp: 22.x
+            elixir: 1.14.x
+    needs: check_format
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          elixir-version: ${{matrix.elixir}}
+      - name: Retrieve dependencies cache
+        uses: actions/cache@v3
+        id: mix-cache # id to use in retrieve action
+        with:
+          path: deps
+          key: v1-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+      - name: Install Dependencies
+        run: mix deps.get 1>/dev/null
+      - name: Run Tests
+        run: mix test
+  interop-tests:
+    runs-on: ubuntu-20.04
+    name: Interop tests
+    needs: check_format
+    if: ${{ github.ref != 'refs/heads/master' }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: 25.1.x
+          elixir-version: 1.14.x
+      - name: Retrieve dependencies cache
+        uses: actions/cache@v3
+        id: mix-cache # id to use in retrieve action
+        with:
+          path: deps
+          key: v1-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+      - name: Install Dependencies
+        run: mix deps.get 1>/dev/null
+        working-directory: ./interop
+      - name: Run interop tests
+        run: mix run script/run.exs
+        working-directory: ./interop
+
+  interop-tests-all:
+    runs-on: ubuntu-20.04
+    name: Interop tests OTP ${{matrix.otp}} / Elixir ${{matrix.elixir}}
+    needs: check_format
+    if: ${{ github.ref == 'refs/heads/master' }}
+    strategy:
+      matrix:
+        otp: [22.x, 23.x, 24.x, 25.1.x]
+        elixir: [1.11.x, 1.12.x, 1.13.x, 1.14.x]
+        exclude:
+          - otp: 25.1.x
+            elixir: 1.11.x
+          - otp: 25.1.x
+            elixir: 1.12.x
+          - otp: 22.x
+            elixir: 1.14.x
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+      - name: Retrieve dependencies cache
+        uses: actions/cache@v3
+        id: mix-cache # id to use in retrieve action
+        with:
+          path: deps
+          key: v1-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+      - name: Install Dependencies
+        run: mix deps.get 1>/dev/null
+        working-directory: ./interop
+      - name: Run interop tests
+        run: mix run script/run.exs
+        working-directory: ./interop
+
+  dialyzer:
+    name: Dialyzer
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        otp: [24.x, 25.1.x]
+        elixir: [1.14.x]
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v3
+      - id: set_vars
+        run: |
+          mix_hash="${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}"
+          echo "::set-output name=mix_hash::$mix_hash"
+      - id: cache-plt
+        uses: actions/cache@v3
+        with:
+          path: |
+            _build/test/plts/dialyzer.plt
+            _build/test/plts/dialyzer.plt.hash
+          key: plt-cache-${{ matrix.otp }}-${{ matrix.elixir }}-${{ steps.set_vars.outputs.mix_hash }}
+          restore-keys: |
+            plt-cache-${{ matrix.otp }}-${{ matrix.elixir }}-
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          elixir-version: ${{matrix.elixir}}
+      - run: mix deps.get 1>/dev/null
+      - run: mix dialyzer --format short
+
+  check_release:
+    runs-on: ubuntu-20.04
+    name: Check release
+    needs: check_format
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: 25.1.x
+          elixir-version: 1.14.x
+      - name: Retrieve dependencies cache
+        uses: actions/cache@v3
+        id: mix-cache # id to use in retrieve action
+        with:
+          path: deps
+          key: v1-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+      - name: Install Dependencies
+        run: mix deps.get 1>/dev/null
+      - name: Build hex
+        run: mix hex.build
+      - name: Generate docs
+        run: mix docs
