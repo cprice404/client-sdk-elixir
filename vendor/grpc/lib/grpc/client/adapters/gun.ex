@@ -105,7 +105,7 @@ defmodule GRPC.Client.Adapters.Gun do
     stream_ref = do_send_request(stream, message, opts)
     Logger.info("GUN SEND_REQUEST: AFTER DO_SEND_REQUEST #{:os.system_time(:milli_seconds) - start_time}")
     x = GRPC.Client.Stream.put_payload(stream, :stream_ref, stream_ref)
-    Logger.info("GUN SEND_REQUEST: AFTER PUT_PAYLOAD #{:os.system_time(:milli_seconds) - start_time}")
+    Logger.info("GUN SEND_REQUEST: AFTER PUT_PAYLOAD: #{:os.system_time(:milli_seconds) - start_time}")
     x
   end
 
