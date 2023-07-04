@@ -3,7 +3,8 @@ import time
 
 
 def main():
-    http_client = http.client.HTTPConnection('localhost:8000')
+    # http_client = http.client.HTTPConnection('localhost:8000')
+    http_client = http.client.HTTPSConnection('localhost:8000')
     for i in range(100_000):
         start_time = time.perf_counter_ns()
         http_client.request('GET', "/")
